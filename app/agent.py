@@ -1,0 +1,359 @@
+from langchain_openai import AzureChatOpenAI
+
+from app.config import (
+    AZURE_OPENAI_API_KEY,
+    AZURE_OPENAI_ENDPOINT,
+    AZURE_OPENAI_API_VERSION,
+    AZURE_OPENAI_CHAT_DEPLOYMENT,
+)
+
+from app.router import classify_intent
+from app.rag import search_documents
+from app.sql_agent import run_sql_agent
+
+from app.memory import (
+    get_conversation_history,
+    save_message,
+)
+
+from app.logger import logger
+
+
+llm = AzureChatOpenAI(
+    azure_deployment=AZURE_OPENAI_CHAT_DEPLOYMENT,
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    api_key=AZURE_OPENAI_API_KEY,
+    api_version=AZURE_OPENAI_API_VERSION,
+)
+
+
+CONTEXTUALIZE_PROMPT = """
+You rewrite follow-up questions into standalone questions.
+
+Use the conversation history only to resolve references in the current question.
+
+Examples of references include:
+- it
+- they
+- them
+- its
+- that branch
+- that product
+- that one
+- the same one
+- what about it
+
+Do not answer the question.
+
+Do not add information that is not present in the conversation.
+
+If the current question is already standalone, return it unchanged.
+
+Return ONLY the rewritten standalone question.
+
+Conversation history:
+{history}
+
+Current question:
+{question}
+"""
+
+
+RAG_RESPONSE_PROMPT = """
+You are a Noor Market assistant.
+
+Answer the user's question using ONLY the retrieved Noor Market
+handbook context.
+
+If the retrieved context does not contain enough information to answer,
+say that the answer is not available in the Noor Market handbook.
+
+Do not invent information.
+
+Keep the answer clear and concise.
+
+Include the source filename at the end of the answer.
+
+User question:
+{question}
+
+Retrieved handbook context:
+{context}
+
+Source:
+{source}
+"""
+
+
+SQL_RESPONSE_PROMPT = """
+You are a Noor Market business data assistant.
+
+Answer the user's question using ONLY the SQL query results.
+
+Do not invent numbers or information.
+
+Keep the answer clear and concise.
+
+User question:
+{question}
+
+SQL results:
+{results}
+"""
+
+
+def format_conversation_history(history) -> str:
+    if not history:
+        return "No previous conversation."
+
+    lines = []
+
+    for message in history:
+        role = message["role"]
+        content = message["content"]
+
+        lines.append(
+            f"{role.capitalize()}: {content}"
+        )
+
+    return "\n".join(lines)
+
+
+def format_rag_context(documents) -> str:
+    context_parts = []
+
+    for document in documents:
+        context_parts.append(
+            document.page_content
+        )
+
+    return "\n\n".join(
+        context_parts
+    )
+
+
+def contextualize_question(
+    question: str,
+    history: str,
+) -> str:
+    if (
+        not history
+        or history == "No previous conversation."
+    ):
+        return question
+
+    prompt = CONTEXTUALIZE_PROMPT.format(
+        history=history,
+        question=question,
+    )
+
+    response = llm.invoke(prompt)
+
+    standalone_question = (
+        response.content.strip()
+    )
+
+    logger.info(
+        "Question contextualized | "
+        f"original={question!r} | "
+        f"standalone={standalone_question!r}"
+    )
+
+    return standalone_question
+
+
+def answer_rag_question(
+    question: str,
+) -> str:
+    logger.info(
+        "RAG retrieval started | "
+        f"question={question!r}"
+    )
+
+    documents = search_documents(
+        question,
+        k=3,
+    )
+
+    if not documents:
+        logger.warning(
+            "RAG retrieval returned no documents | "
+            f"question={question!r}"
+        )
+
+        return (
+            "I could not find enough information "
+            "in the Noor Market handbook."
+        )
+
+    context = format_rag_context(
+        documents
+    )
+
+    source = documents[0].metadata.get(
+        "source",
+        "NOOR_MARKET_HANDBOOK.txt",
+    )
+
+    prompt = RAG_RESPONSE_PROMPT.format(
+        question=question,
+        context=context,
+        source=source,
+    )
+
+    response = llm.invoke(prompt)
+
+    answer = response.content.strip()
+
+    logger.info(
+        "RAG response generated | "
+        f"question={question!r} | "
+        f"source={source!r}"
+    )
+
+    return answer
+
+
+def answer_sql_question(
+    question: str,
+    history: str = "",
+) -> str:
+    logger.info(
+        "SQL path started | "
+        f"question={question!r}"
+    )
+
+    sql_output = run_sql_agent(
+        question=question,
+        history=history,
+    )
+
+    results = sql_output["results"]
+
+    if not results:
+        logger.info(
+            "SQL query returned no rows | "
+            f"question={question!r}"
+        )
+
+        return (
+            "The database query completed successfully, "
+            "but no matching data was found."
+        )
+
+    prompt = SQL_RESPONSE_PROMPT.format(
+        question=question,
+        results=results,
+    )
+
+    response = llm.invoke(prompt)
+
+    answer = response.content.strip()
+
+    logger.info(
+        "SQL response generated | "
+        f"question={question!r} | "
+        f"attempts={sql_output['attempts']}"
+    )
+
+    return answer
+
+
+def run_agent(
+    question: str,
+    session_id: str,
+) -> str:
+    logger.info(
+        "Agent request started | "
+        f"session={session_id!r} | "
+        f"question={question!r}"
+    )
+
+    try:
+        history = get_conversation_history(
+            session_id=session_id,
+        )
+
+        formatted_history = (
+            format_conversation_history(
+                history
+            )
+        )
+
+        standalone_question = (
+            contextualize_question(
+                question=question,
+                history=formatted_history,
+            )
+        )
+
+        intent = classify_intent(
+            question=standalone_question,
+        )
+
+        logger.info(
+            "Intent classified | "
+            f"session={session_id!r} | "
+            f"intent={intent!r} | "
+            f"standalone_question="
+            f"{standalone_question!r}"
+        )
+
+        if intent == "rag":
+            answer = answer_rag_question(
+                question=standalone_question,
+            )
+
+        elif intent == "sql":
+            answer = answer_sql_question(
+                question=standalone_question,
+                history=formatted_history,
+            )
+
+        else:
+            answer = (
+                "I can only answer questions "
+                "using the Noor Market handbook "
+                "or Noor Market business data."
+            )
+
+            logger.info(
+                "Unknown intent handled | "
+                f"session={session_id!r} | "
+                f"question={standalone_question!r}"
+            )
+
+        save_message(
+            session_id=session_id,
+            role="user",
+            content=question,
+        )
+
+        save_message(
+            session_id=session_id,
+            role="assistant",
+            content=answer,
+        )
+
+        logger.info(
+            "Conversation saved to memory | "
+            f"session={session_id!r}"
+        )
+
+        logger.info(
+            "Agent request completed | "
+            f"session={session_id!r} | "
+            f"intent={intent!r}"
+        )
+
+        return answer
+
+    except Exception as error:
+        logger.exception(
+            "Agent request failed | "
+            f"session={session_id!r} | "
+            f"question={question!r} | "
+            f"error={str(error)!r}"
+        )
+
+        raise
