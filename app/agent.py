@@ -44,7 +44,6 @@ Examples of references include:
 - what about it
 
 Do not answer the question.
-
 Do not add information that is not present in the conversation.
 
 If the current question is already standalone, return it unchanged.
@@ -91,7 +90,7 @@ You are a Noor Market business data assistant.
 Answer the user's question using ONLY the SQL query results.
 
 Do not invent numbers or information.
-
+Do not rename one metric as another metric.
 Keep the answer clear and concise.
 
 User question:
@@ -228,6 +227,20 @@ def answer_sql_question(
         history=history,
     )
 
+    if sql_output.get(
+        "unsupported_metric"
+    ):
+        logger.warning(
+            "Unsupported business metric | "
+            f"question={question!r}"
+        )
+
+        return (
+            "That metric cannot be calculated from the "
+            "available Noor Market database because the "
+            "required cost or COGS data is not stored."
+        )
+
     results = sql_output["results"]
 
     if not results:
@@ -333,6 +346,7 @@ def run_agent(
             session_id=session_id,
             role="assistant",
             content=answer,
+            intent=intent,
         )
 
         logger.info(

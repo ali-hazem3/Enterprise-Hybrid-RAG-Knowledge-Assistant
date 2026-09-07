@@ -3,7 +3,9 @@ from datetime import datetime
 from pathlib import Path
 
 
-MEMORY_DB_PATH = Path("storage/app.db")
+MEMORY_DB_PATH = Path(
+    "storage/app.db"
+)
 
 
 def initialize_memory():
@@ -12,7 +14,10 @@ def initialize_memory():
         exist_ok=True,
     )
 
-    connection = sqlite3.connect(MEMORY_DB_PATH)
+    connection = sqlite3.connect(
+        MEMORY_DB_PATH
+    )
+
     cursor = connection.cursor()
 
     cursor.execute(
@@ -22,10 +27,30 @@ def initialize_memory():
             session_id TEXT NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
+            intent TEXT,
             created_at TEXT NOT NULL
         )
         """
     )
+
+    cursor.execute(
+        """
+        PRAGMA table_info(messages)
+        """
+    )
+
+    existing_columns = [
+        row[1]
+        for row in cursor.fetchall()
+    ]
+
+    if "intent" not in existing_columns:
+        cursor.execute(
+            """
+            ALTER TABLE messages
+            ADD COLUMN intent TEXT
+            """
+        )
 
     connection.commit()
     connection.close()
@@ -35,10 +60,14 @@ def save_message(
     session_id: str,
     role: str,
     content: str,
+    intent: str | None = None,
 ):
     initialize_memory()
 
-    connection = sqlite3.connect(MEMORY_DB_PATH)
+    connection = sqlite3.connect(
+        MEMORY_DB_PATH
+    )
+
     cursor = connection.cursor()
 
     cursor.execute(
@@ -47,14 +76,16 @@ def save_message(
             session_id,
             role,
             content,
+            intent,
             created_at
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?)
         """,
         (
             session_id,
             role,
             content,
+            intent,
             datetime.now().isoformat(),
         ),
     )
@@ -69,12 +100,17 @@ def get_conversation_history(
 ):
     initialize_memory()
 
-    connection = sqlite3.connect(MEMORY_DB_PATH)
+    connection = sqlite3.connect(
+        MEMORY_DB_PATH
+    )
+
     cursor = connection.cursor()
 
     cursor.execute(
         """
-        SELECT role, content
+        SELECT
+            role,
+            content
         FROM messages
         WHERE session_id = ?
         ORDER BY id DESC
@@ -100,12 +136,16 @@ def get_conversation_history(
         for role, content in rows
     ]
 
+
 def get_all_messages(
     session_id: str,
 ):
     initialize_memory()
 
-    connection = sqlite3.connect(MEMORY_DB_PATH)
+    connection = sqlite3.connect(
+        MEMORY_DB_PATH
+    )
+
     cursor = connection.cursor()
 
     cursor.execute(
@@ -115,6 +155,7 @@ def get_all_messages(
             session_id,
             role,
             content,
+            intent,
             created_at
         FROM messages
         WHERE session_id = ?
@@ -133,7 +174,8 @@ def get_all_messages(
             "session_id": row[1],
             "role": row[2],
             "content": row[3],
-            "created_at": row[4],
+            "intent": row[4],
+            "created_at": row[5],
         }
         for row in rows
     ]

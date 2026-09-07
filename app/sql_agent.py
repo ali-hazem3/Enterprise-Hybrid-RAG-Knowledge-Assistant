@@ -23,7 +23,18 @@ llm = AzureChatOpenAI(
 
 BUSINESS_RULES = """
 Business rules:
+
 - Revenue = dbo.sales.quantity * dbo.products.unit_price
+
+Important:
+- Gross profit requires cost or COGS data.
+- Gross margin requires both revenue and gross profit.
+- The current database does NOT contain product cost or COGS unless such
+  a column appears in the dynamically discovered schema.
+- Never treat revenue as gross profit.
+- Never treat revenue as gross margin.
+- If the requested metric cannot be calculated from the available schema,
+  do not invent a value.
 """
 
 
@@ -53,7 +64,13 @@ Rules:
 - Do not invent tables or columns.
 - Never generate INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE,
   CREATE, MERGE, EXEC, or EXECUTE.
-- Return only the SQL query.
+- Before generating SQL, verify that all columns required to calculate the
+  requested metric actually exist in the provided schema.
+- If the requested metric cannot be calculated from the available schema,
+  return exactly:
+  UNSUPPORTED_METRIC
+- Never substitute a different metric for the one requested.
+- Return only the SQL query or UNSUPPORTED_METRIC.
 - Do not use markdown code fences.
 - Do not explain the query.
 """
@@ -92,7 +109,11 @@ Rules:
 - Do not invent tables or columns.
 - Never generate INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE,
   CREATE, MERGE, EXEC, or EXECUTE.
-- Return only the corrected SQL query.
+- If the requested metric cannot actually be calculated from the schema,
+  return exactly:
+  UNSUPPORTED_METRIC
+- Never substitute another metric for the requested metric.
+- Return only the corrected SQL query or UNSUPPORTED_METRIC.
 - Do not use markdown code fences.
 - Do not explain anything.
 """
@@ -160,6 +181,9 @@ def validate_sql(query: str) -> bool:
         .upper()
     )
 
+    if normalized_query == "UNSUPPORTED_METRIC":
+        return True
+
     if not (
         normalized_query.startswith("SELECT")
         or normalized_query.startswith("WITH")
@@ -209,6 +233,14 @@ def run_sql_agent(
         history=history,
     )
 
+    if query.strip().upper() == "UNSUPPORTED_METRIC":
+        return {
+            "query": None,
+            "results": [],
+            "attempts": 0,
+            "unsupported_metric": True,
+        }
+
     for attempt in range(
         max_retries + 1
     ):
@@ -227,6 +259,7 @@ def run_sql_agent(
                 "query": query,
                 "results": results,
                 "attempts": attempt + 1,
+                "unsupported_metric": False,
             }
 
         except Exception as error:
@@ -239,3 +272,16 @@ def run_sql_agent(
                 error=str(error),
                 history=history,
             )
+
+            if (
+                query
+                .strip()
+                .upper()
+                == "UNSUPPORTED_METRIC"
+            ):
+                return {
+                    "query": None,
+                    "results": [],
+                    "attempts": attempt + 1,
+                    "unsupported_metric": True,
+                }
