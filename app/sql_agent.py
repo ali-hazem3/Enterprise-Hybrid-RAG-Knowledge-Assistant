@@ -22,19 +22,31 @@ llm = AzureChatOpenAI(
 
 
 BUSINESS_RULES = """
-Business rules:
+PulseFit business rules:
 
-- Revenue = dbo.sales.quantity * dbo.products.unit_price
+- Actual revenue = SUM(dbo.payments.amount).
+- Plan price comes from dbo.plans.price.
+- A member's branch is determined by joining:
+  dbo.members.branch_id = dbo.branches.branch_id.
+- A member's membership plan is determined by joining:
+  dbo.members.plan_id = dbo.plans.plan_id.
+- Member counts are calculated from dbo.members.
+- Revenue by branch requires joining:
+  dbo.payments -> dbo.members -> dbo.branches.
+- Revenue by plan requires joining:
+  dbo.payments -> dbo.members -> dbo.plans.
+- Membership join-date questions use dbo.members.join_date.
+- Payment-date questions use dbo.payments.pay_date.
+- Plan billing type comes from dbo.plans.billing.
 
 Important:
-- Gross profit requires cost or COGS data.
-- Gross margin requires both revenue and gross profit.
-- The current database does NOT contain product cost or COGS unless such
-  a column appears in the dynamically discovered schema.
-- Never treat revenue as gross profit.
-- Never treat revenue as gross margin.
-- If the requested metric cannot be calculated from the available schema,
-  do not invent a value.
+- Do not assume every member has made a payment.
+- Do not calculate actual revenue using plan price multiplied by member count.
+- Profit cannot be calculated because the database contains no cost or
+  expense data.
+- Active-member counts cannot be calculated because the database contains
+  no membership status column.
+- Do not invent unavailable metrics or substitute another metric.
 """
 
 
