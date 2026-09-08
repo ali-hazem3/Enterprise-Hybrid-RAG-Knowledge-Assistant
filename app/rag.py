@@ -24,7 +24,7 @@ embeddings = AzureOpenAIEmbeddings(
 
 def get_vector_store():
     return Chroma(
-        collection_name="noor_market_handbook",
+        collection_name="pulsefit_handbook",
         embedding_function=embeddings,
         persist_directory=str(VECTOR_STORE_PATH),
     )
@@ -42,7 +42,7 @@ def search_documents(question: str, k: int = 3):
 
 if __name__ == "__main__":
     results = search_documents(
-        "Who manages the Marina branch?"
+        "What are the PulseFit opening hours?"
     )
 
     for index, document in enumerate(

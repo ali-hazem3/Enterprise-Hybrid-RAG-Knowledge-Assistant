@@ -78,6 +78,8 @@ def calculate_file_hash(file_path: str):
 
 
 def get_active_document(filename: str):
+    initialize_registry()
+
     connection = sqlite3.connect(
         REGISTRY_DB_PATH
     )
@@ -146,7 +148,7 @@ def create_vector_store(file_path: str):
     )
 
     vector_store = Chroma(
-        collection_name="noor_market_handbook",
+        collection_name="pulsefit_handbook",
         embedding_function=embeddings,
         persist_directory=str(
             VECTOR_STORE_PATH
@@ -258,7 +260,7 @@ def get_document_registry():
 
 if __name__ == "__main__":
     chunk_count = create_vector_store(
-        "data/NOOR_MARKET_HANDBOOK.txt"
+        "data/PULSEFIT_HANDBOOK.txt"
     )
 
     if chunk_count > 0:
