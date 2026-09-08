@@ -228,6 +228,7 @@ def answer_sql_question(
         history=history,
     )
 
+    # 1. Unsupported metric
     if sql_output.get(
         "unsupported_metric"
     ):
@@ -242,8 +243,41 @@ def answer_sql_question(
             "required data is not stored."
         )
 
+    # 2. SQL rejected by safety validator
+    if sql_output.get(
+        "validator_failed"
+    ):
+        logger.warning(
+            "SQL rejected by safety validator | "
+            f"question={question!r} | "
+            f"query={sql_output.get('query')!r}"
+        )
+
+        return (
+            "I could not safely execute the generated "
+            "database query because it was rejected "
+            "by the SQL safety validator."
+        )
+
+    # 3. SQL execution failed after repair limit
+    if sql_output.get(
+        "execution_failed"
+    ):
+        logger.error(
+            "SQL execution failed after repair limit | "
+            f"question={question!r} | "
+            f"attempts={sql_output.get('attempts')}"
+        )
+
+        return (
+            "I could not execute the database query "
+            "successfully after the allowed repair "
+            "attempts."
+        )
+
     results = sql_output["results"]
 
+    # 4. Valid query, but zero matching rows
     if not results:
         logger.info(
             "SQL query returned no rows | "
@@ -255,6 +289,7 @@ def answer_sql_question(
             "but no matching data was found."
         )
 
+    # 5. Successful SQL result
     prompt = SQL_RESPONSE_PROMPT.format(
         question=question,
         results=results,

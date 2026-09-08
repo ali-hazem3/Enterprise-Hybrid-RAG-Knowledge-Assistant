@@ -238,7 +238,7 @@ def repair_sql(
 def run_sql_agent(
     question: str,
     history: str = "",
-    max_retries: int = 2,
+    max_retries: int = 3,
 ):
     query = generate_sql(
         question=question,
@@ -251,16 +251,22 @@ def run_sql_agent(
             "results": [],
             "attempts": 0,
             "unsupported_metric": True,
+            "validator_failed": False,
+            "execution_failed": False,
         }
 
     for attempt in range(
         max_retries + 1
     ):
         if not validate_sql(query):
-            raise ValueError(
-                "Generated SQL was rejected "
-                "by the safety validator."
-            )
+            return {
+                "query": query,
+                "results": [],
+                "attempts": attempt + 1,
+                "unsupported_metric": False,
+                "validator_failed": True,
+                "execution_failed": False,
+            }
 
         try:
             results = execute_select_query(
@@ -272,11 +278,21 @@ def run_sql_agent(
                 "results": results,
                 "attempts": attempt + 1,
                 "unsupported_metric": False,
+                "validator_failed": False,
+                "execution_failed": False,
             }
 
         except Exception as error:
             if attempt == max_retries:
-                raise
+                return {
+                    "query": query,
+                    "results": [],
+                    "attempts": attempt + 1,
+                    "unsupported_metric": False,
+                    "validator_failed": False,
+                    "execution_failed": True,
+                    "error": str(error),
+                }
 
             query = repair_sql(
                 question=question,
@@ -296,4 +312,6 @@ def run_sql_agent(
                     "results": [],
                     "attempts": attempt + 1,
                     "unsupported_metric": True,
+                    "validator_failed": False,
+                    "execution_failed": False,
                 }
