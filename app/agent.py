@@ -14,7 +14,7 @@ from app.ambiguity import check_plan_ambiguity
 
 from app.memory import (
     get_conversation_history,
-    save_message,
+    save_interaction,
 )
 
 from app.logger import logger
@@ -367,17 +367,12 @@ def run_agent(
                 f"question={standalone_question!r}"
             )
 
-        save_message(
+        save_interaction(
             session_id=session_id,
-            role="user",
-            content=question,
-        )
-
-        save_message(
-            session_id=session_id,
-            role="assistant",
-            content=answer,
-            intent=intent,
+            original_user_question=question,
+            contextualized_question=standalone_question,
+            selected_route=intent,
+            assistant_response=answer,
         )
 
         logger.info(

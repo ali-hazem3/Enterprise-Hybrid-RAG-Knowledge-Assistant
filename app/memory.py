@@ -22,45 +22,28 @@ def initialize_memory():
 
     cursor.execute(
         """
-        CREATE TABLE IF NOT EXISTS messages (
+        CREATE TABLE IF NOT EXISTS conversations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            intent TEXT,
-            created_at TEXT NOT NULL
+            original_user_question TEXT NOT NULL,
+            contextualized_question TEXT NOT NULL,
+            selected_route TEXT NOT NULL,
+            assistant_response TEXT NOT NULL,
+            timestamp TEXT NOT NULL
         )
         """
     )
-
-    cursor.execute(
-        """
-        PRAGMA table_info(messages)
-        """
-    )
-
-    existing_columns = [
-        row[1]
-        for row in cursor.fetchall()
-    ]
-
-    if "intent" not in existing_columns:
-        cursor.execute(
-            """
-            ALTER TABLE messages
-            ADD COLUMN intent TEXT
-            """
-        )
 
     connection.commit()
     connection.close()
 
 
-def save_message(
+def save_interaction(
     session_id: str,
-    role: str,
-    content: str,
-    intent: str | None = None,
+    original_user_question: str,
+    contextualized_question: str,
+    selected_route: str,
+    assistant_response: str,
 ):
     initialize_memory()
 
@@ -72,20 +55,22 @@ def save_message(
 
     cursor.execute(
         """
-        INSERT INTO messages (
+        INSERT INTO conversations (
             session_id,
-            role,
-            content,
-            intent,
-            created_at
+            original_user_question,
+            contextualized_question,
+            selected_route,
+            assistant_response,
+            timestamp
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             session_id,
-            role,
-            content,
-            intent,
+            original_user_question,
+            contextualized_question,
+            selected_route,
+            assistant_response,
             datetime.now().isoformat(),
         ),
     )
@@ -109,9 +94,10 @@ def get_conversation_history(
     cursor.execute(
         """
         SELECT
-            role,
-            content
-        FROM messages
+            original_user_question,
+            contextualized_question,
+            assistant_response
+        FROM conversations
         WHERE session_id = ?
         ORDER BY id DESC
         LIMIT ?
@@ -128,16 +114,32 @@ def get_conversation_history(
 
     rows.reverse()
 
-    return [
-        {
-            "role": role,
-            "content": content,
-        }
-        for role, content in rows
-    ]
+    history = []
+
+    for row in rows:
+        original_question = row[0]
+        contextualized_question = row[1]
+        assistant_response = row[2]
+
+        history.append(
+            {
+                "role": "user",
+                "content": original_question,
+                "contextualized_question": contextualized_question,
+            }
+        )
+
+        history.append(
+            {
+                "role": "assistant",
+                "content": assistant_response,
+            }
+        )
+
+    return history
 
 
-def get_all_messages(
+def get_all_interactions(
     session_id: str,
 ):
     initialize_memory()
@@ -153,11 +155,12 @@ def get_all_messages(
         SELECT
             id,
             session_id,
-            role,
-            content,
-            intent,
-            created_at
-        FROM messages
+            original_user_question,
+            contextualized_question,
+            selected_route,
+            assistant_response,
+            timestamp
+        FROM conversations
         WHERE session_id = ?
         ORDER BY id ASC
         """,
@@ -172,10 +175,11 @@ def get_all_messages(
         {
             "id": row[0],
             "session_id": row[1],
-            "role": row[2],
-            "content": row[3],
-            "intent": row[4],
-            "created_at": row[5],
+            "original_user_question": row[2],
+            "contextualized_question": row[3],
+            "selected_route": row[4],
+            "assistant_response": row[5],
+            "timestamp": row[6],
         }
         for row in rows
     ]

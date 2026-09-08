@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException
 from app.agent import run_agent
 
 from app.memory import (
-    get_all_messages,
+    get_all_interactions as get_all_messages,
 )
 
 from app.ingestion import (
