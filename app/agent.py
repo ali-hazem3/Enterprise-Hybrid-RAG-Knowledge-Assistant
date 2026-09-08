@@ -10,6 +10,7 @@ from app.config import (
 from app.router import classify_intent
 from app.rag import search_documents
 from app.sql_agent import run_sql_agent
+from app.ambiguity import check_plan_ambiguity
 
 from app.memory import (
     get_conversation_history,
@@ -59,13 +60,13 @@ Current question:
 
 
 RAG_RESPONSE_PROMPT = """
-You are a Noor Market assistant.
+You are a PulseFit assistant.
 
-Answer the user's question using ONLY the retrieved Noor Market
+Answer the user's question using ONLY the retrieved PulseFit
 handbook context.
 
 If the retrieved context does not contain enough information to answer,
-say that the answer is not available in the Noor Market handbook.
+say that the answer is not available in the PulseFit handbook.
 
 Do not invent information.
 
@@ -85,7 +86,7 @@ Source:
 
 
 SQL_RESPONSE_PROMPT = """
-You are a Noor Market business data assistant.
+You are a PulseFit business data assistant.
 
 Answer the user's question using ONLY the SQL query results.
 
@@ -182,7 +183,7 @@ def answer_rag_question(
 
         return (
             "I could not find enough information "
-            "in the Noor Market handbook."
+            "in the PulseFit handbook."
         )
 
     context = format_rag_context(
@@ -191,7 +192,7 @@ def answer_rag_question(
 
     source = documents[0].metadata.get(
         "source",
-        "NOOR_MARKET_HANDBOOK.txt",
+        "PULSEFIT_HANDBOOK.txt",
     )
 
     prompt = RAG_RESPONSE_PROMPT.format(
@@ -237,8 +238,8 @@ def answer_sql_question(
 
         return (
             "That metric cannot be calculated from the "
-            "available Noor Market database because the "
-            "required cost or COGS data is not stored."
+            "available PulseFit database because the "
+            "required data is not stored."
         )
 
     results = sql_output["results"]
@@ -318,16 +319,46 @@ def run_agent(
             )
 
         elif intent == "sql":
-            answer = answer_sql_question(
-                question=standalone_question,
-                history=formatted_history,
+            ambiguity_result = (
+                check_plan_ambiguity(
+                    standalone_question
+                )
             )
+
+            if ambiguity_result["ambiguous"]:
+                matches = (
+                    ambiguity_result["matches"]
+                )
+
+                options = ", ".join(
+                    matches
+                )
+
+                answer = (
+                    "Your question could refer to "
+                    "more than one membership plan: "
+                    f"{options}. "
+                    "Please specify which plan you mean."
+                )
+
+                logger.info(
+                    "Ambiguous plan reference detected | "
+                    f"session={session_id!r} | "
+                    f"question={standalone_question!r} | "
+                    f"matches={matches!r}"
+                )
+
+            else:
+                answer = answer_sql_question(
+                    question=standalone_question,
+                    history=formatted_history,
+                )
 
         else:
             answer = (
                 "I can only answer questions "
-                "using the Noor Market handbook "
-                "or Noor Market business data."
+                "using the PulseFit handbook "
+                "or PulseFit business data."
             )
 
             logger.info(

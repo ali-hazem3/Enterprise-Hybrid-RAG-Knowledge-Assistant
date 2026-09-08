@@ -83,3 +83,17 @@ def get_database_schema():
         )
 
     return schema
+
+def get_plan_names():
+    query = """
+    SELECT plan_name
+    FROM dbo.plans
+    ORDER BY plan_name;
+    """
+
+    rows = execute_select_query(query)
+
+    return [
+        row["plan_name"]
+        for row in rows
+    ]
