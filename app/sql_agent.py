@@ -11,7 +11,7 @@ from app.database import (
     execute_select_query,
     get_database_schema,
 )
-
+from app.logger import logger
 
 llm = AzureChatOpenAI(
     azure_deployment=AZURE_OPENAI_CHAT_DEPLOYMENT,
@@ -245,7 +245,18 @@ def run_sql_agent(
         history=history,
     )
 
+    logger.info(
+        "SQL generated | "
+        f"question={question!r} | "
+        f"query={query!r}"
+    )
+
     if query.strip().upper() == "UNSUPPORTED_METRIC":
+        logger.warning(
+            "Unsupported SQL metric | "
+            f"question={question!r}"
+        )
+
         return {
             "query": None,
             "results": [],
@@ -258,11 +269,28 @@ def run_sql_agent(
     for attempt in range(
         max_retries + 1
     ):
-        if not validate_sql(query):
+        attempt_number = attempt + 1
+
+        is_valid = validate_sql(query)
+
+        logger.info(
+            "SQL validator result | "
+            f"attempt={attempt_number} | "
+            f"valid={is_valid} | "
+            f"query={query!r}"
+        )
+
+        if not is_valid:
+            logger.warning(
+                "SQL rejected by validator | "
+                f"attempt={attempt_number} | "
+                f"query={query!r}"
+            )
+
             return {
                 "query": query,
                 "results": [],
-                "attempts": attempt + 1,
+                "attempts": attempt_number,
                 "unsupported_metric": False,
                 "validator_failed": True,
                 "execution_failed": False,
@@ -273,26 +301,51 @@ def run_sql_agent(
                 query
             )
 
+            logger.info(
+                "SQL execution successful | "
+                f"attempt={attempt_number} | "
+                f"rows={len(results)}"
+            )
+
             return {
                 "query": query,
                 "results": results,
-                "attempts": attempt + 1,
+                "attempts": attempt_number,
                 "unsupported_metric": False,
                 "validator_failed": False,
                 "execution_failed": False,
             }
 
         except Exception as error:
+            logger.error(
+                "SQL execution error | "
+                f"attempt={attempt_number} | "
+                f"query={query!r} | "
+                f"error={str(error)!r}"
+            )
+
             if attempt == max_retries:
+                logger.error(
+                    "SQL repair limit reached | "
+                    f"total_attempts={attempt_number}"
+                )
+
                 return {
                     "query": query,
                     "results": [],
-                    "attempts": attempt + 1,
+                    "attempts": attempt_number,
                     "unsupported_metric": False,
                     "validator_failed": False,
                     "execution_failed": True,
                     "error": str(error),
                 }
+
+            repair_number = attempt + 1
+
+            logger.info(
+                "SQL repair started | "
+                f"repair_attempt={repair_number}"
+            )
 
             query = repair_sql(
                 question=question,
@@ -301,16 +354,27 @@ def run_sql_agent(
                 history=history,
             )
 
+            logger.info(
+                "SQL repaired | "
+                f"repair_attempt={repair_number} | "
+                f"query={query!r}"
+            )
+
             if (
                 query
                 .strip()
                 .upper()
                 == "UNSUPPORTED_METRIC"
             ):
+                logger.warning(
+                    "Repair returned unsupported metric | "
+                    f"repair_attempt={repair_number}"
+                )
+
                 return {
                     "query": None,
                     "results": [],
-                    "attempts": attempt + 1,
+                    "attempts": attempt_number + 1,
                     "unsupported_metric": True,
                     "validator_failed": False,
                     "execution_failed": False,

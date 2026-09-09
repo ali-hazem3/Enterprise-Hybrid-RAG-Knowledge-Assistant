@@ -175,6 +175,12 @@ def answer_rag_question(
         k=3,
     )
 
+    logger.info(
+        "RAG retrieval completed | "
+        f"question={question!r} | "
+        f"chunks_retrieved={len(documents)}"
+    )
+
     if not documents:
         logger.warning(
             "RAG retrieval returned no documents | "
@@ -208,7 +214,8 @@ def answer_rag_question(
     logger.info(
         "RAG response generated | "
         f"question={question!r} | "
-        f"source={source!r}"
+        f"source={source!r} | "
+        f"chunks_used={len(documents)}"
     )
 
     return answer
@@ -322,6 +329,11 @@ def run_agent(
         history = get_conversation_history(
             session_id=session_id,
         )
+        logger.info(
+    "Conversation history loaded | "
+    f"session={session_id!r} | "
+    f"messages={len(history)}"
+)
 
         formatted_history = (
             format_conversation_history(
