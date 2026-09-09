@@ -39,12 +39,15 @@ Examples of references include:
 - them
 - its
 - that branch
-- that product
+- that plan
 - that one
 - the same one
 - what about it
 
 Do not answer the question.
+
+Do not choose whether the question is SQL, RAG, or unknown.
+
 Do not add information that is not present in the conversation.
 
 If the current question is already standalone, return it unchanged.
@@ -91,7 +94,9 @@ You are a PulseFit business data assistant.
 Answer the user's question using ONLY the SQL query results.
 
 Do not invent numbers or information.
+
 Do not rename one metric as another metric.
+
 Keep the answer clear and concise.
 
 User question:
@@ -136,12 +141,6 @@ def contextualize_question(
     question: str,
     history: str,
 ) -> str:
-    if (
-        not history
-        or history == "No previous conversation."
-    ):
-        return question
-
     prompt = CONTEXTUALIZE_PROMPT.format(
         history=history,
         question=question,
@@ -329,11 +328,12 @@ def run_agent(
         history = get_conversation_history(
             session_id=session_id,
         )
+
         logger.info(
-    "Conversation history loaded | "
-    f"session={session_id!r} | "
-    f"messages={len(history)}"
-)
+            "Conversation history loaded | "
+            f"session={session_id!r} | "
+            f"messages={len(history)}"
+        )
 
         formatted_history = (
             format_conversation_history(
