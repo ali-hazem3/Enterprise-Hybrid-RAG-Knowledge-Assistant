@@ -85,6 +85,15 @@ Rules:
 - Return only the SQL query or UNSUPPORTED_METRIC.
 - Do not use markdown code fences.
 - Do not explain the query.
+- For aggregate questions with filters such as dates, branches, plans,
+  products, or other conditions, preserve the distinction between
+  "no matching rows" and a genuine numeric zero.
+- Do NOT use COALESCE, ISNULL, or another default value to convert a
+  NULL aggregate result into 0.
+- For SUM, AVG, MIN, MAX, or similar filtered aggregates, allow SQL
+  Server to return NULL when no rows match the requested filter.
+- A numeric zero must only represent an actual calculated zero, not
+  the absence of matching records.
 """
 
 
@@ -128,6 +137,10 @@ Rules:
 - Return only the corrected SQL query or UNSUPPORTED_METRIC.
 - Do not use markdown code fences.
 - Do not explain anything.
+- Preserve the distinction between no matching data and a genuine zero.
+- Do NOT use COALESCE, ISNULL, or another default value to convert a
+  NULL aggregate result into 0.
+- For filtered aggregate queries, allow NULL when no rows match.
 """
 
 

@@ -31,26 +31,87 @@ llm = AzureChatOpenAI(
 CONTEXTUALIZE_PROMPT = """
 You rewrite follow-up questions into standalone questions.
 
-Use the conversation history only to resolve references in the current question.
+Your ONLY job is to resolve genuine references in the current question
+using the conversation history.
 
-Examples of references include:
+Examples of genuine references:
 - it
 - they
 - them
 - its
 - that branch
-- that plan
+- that product
 - that one
 - the same one
 - what about it
+- and monthly?
+- and annual?
 
-Do not answer the question.
+CRITICAL RULES:
 
-Do not choose whether the question is SQL, RAG, or unknown.
+1. Never add specificity that the user did not provide.
 
-Do not add information that is not present in the conversation.
+2. Never add a membership plan name, branch name, product name,
+   category, billing type, or other qualifier unless the current
+   question clearly refers to something established earlier.
 
-If the current question is already standalone, return it unchanged.
+3. Preserve ambiguity.
+   If the current question is ambiguous, it MUST remain ambiguous so
+   downstream ambiguity detection can handle it.
+
+4. Do not use conversation history to narrow a standalone ambiguous
+   category.
+
+Examples:
+
+Conversation history:
+User: How many Premium Annual members are there?
+Assistant: There are 10 Premium Annual members.
+
+Current question:
+and monthly?
+
+Output:
+How many Premium Monthly members are there?
+
+This is allowed because "and monthly?" is a follow-up referring to the
+previous Premium membership question.
+
+
+Conversation history:
+User: How many Premium Annual members are there?
+Assistant: There are 10 Premium Annual members.
+
+Current question:
+how many monthly members do we have?
+
+Output:
+how many monthly members do we have?
+
+Do NOT rewrite this as "Premium Monthly".
+The user independently asked about monthly members and did not say
+"Premium".
+
+
+Current question:
+how many annual members get free guest passes?
+
+Output:
+how many annual members get free guest passes?
+
+Do NOT rewrite "annual members" as "Premium Annual members" because
+"annual" may refer to more than one annual plan.
+
+
+5. Only resolve information that is genuinely referenced by the current
+   question.
+
+6. Do not answer the question.
+
+7. Do not add information that is not explicitly stated or clearly
+   referenced.
+
+8. If the current question is already standalone, return it unchanged.
 
 Return ONLY the rewritten standalone question.
 
@@ -283,23 +344,43 @@ def answer_sql_question(
 
     results = sql_output["results"]
 
-    # 4. Valid query, but zero matching rows
+# 4. Valid query, but no matching data
     if not results:
-        logger.info(
-            "SQL query returned no rows | "
-            f"question={question!r}"
-        )
-
-        return (
-            "The database query completed successfully, "
-            "but no matching data was found."
-        )
-
-    # 5. Successful SQL result
-    prompt = SQL_RESPONSE_PROMPT.format(
-        question=question,
-        results=results,
+     logger.info(
+        "SQL query returned no rows | "
+        f"question={question!r}"
     )
+
+    return (
+        "The database query completed successfully, "
+        "but no matching data was found."
+    )
+
+# Aggregate queries can return one row containing NULL
+# when no records match the requested filters.
+    if (
+      len(results) == 1
+      and results[0]
+    and all(
+        value is None
+        for value in results[0].values()
+    )
+    ):
+     logger.info(
+        "SQL aggregate returned no matching data | "
+        f"question={question!r}"
+    )
+
+    return (
+        "The database query completed successfully, "
+        "but no matching data was found."
+    )
+
+# 5. Successful SQL result
+    prompt = SQL_RESPONSE_PROMPT.format(
+    question=question,
+    results=results,
+   )
 
     response = llm.invoke(prompt)
 
